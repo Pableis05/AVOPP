@@ -1,0 +1,57 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum ActivityType {
+  clase
+  tarea
+  examen
+  lectura
+  entrega
+}
+
+enum ActivityStatus {
+  pending
+  in_progress
+  completed
+}
+
+enum PriorityMode {
+  auto
+  manual
+}
+
+model Subject {
+  id         String     @id @default(uuid())
+  name       String
+  code       String?    @unique
+  color      String?
+  activities Activity[]
+}
+
+model Activity {
+  id              String         @id @default(uuid())
+  subjectId       String
+  subject         Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  type            ActivityType
+  name            String
+  description     String?
+  startAt         DateTime?
+  dueAt           DateTime?
+  status          ActivityStatus @default(pending)
+  priority        PriorityMode   @default(auto)
+  manualPriority  Int?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([subjectId])
+  @@index([dueAt])
+}

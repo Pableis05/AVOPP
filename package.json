@@ -1,0 +1,41 @@
+{
+  "name": "avopp",
+  "version": "1.0.0",
+  "description": "Read.me",
+  "main": "index.js",
+  "scripts": {
+    "dev": "cross-env DATABASE_URL=file:./dev.db nodemon --watch src --ext ts --exec tsx src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "prisma:migrate": "cross-env DATABASE_URL=file:./dev.db prisma migrate dev --name init",
+    "prisma:generate": "prisma generate",
+    "prisma:seed": "cross-env DATABASE_URL=file:./dev.db tsx prisma/seed.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pableis05/AVOPP.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Pableis05/AVOPP/issues"
+  },
+  "homepage": "https://github.com/Pableis05/AVOPP#readme",
+  "dependencies": {
+    "@prisma/client": "^6.16.3",
+    "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "nodemon": "^3.1.10",
+    "prisma": "^6.16.3",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

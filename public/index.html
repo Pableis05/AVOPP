@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AVOPP</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 16px; background: #0b1220; color: #e6edf3; }
+      header { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+      main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+      section { background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 12px; }
+      h2 { margin: 0 0 8px; font-size: 16px; }
+      .row { display: flex; gap: 8px; align-items: center; }
+      input, select, textarea, button { background: #0b1220; color: #e6edf3; border: 1px solid #374151; border-radius: 6px; padding: 6px 8px; }
+      button { cursor: pointer; }
+      .chip { display:inline-block; padding: 2px 8px; border-radius: 16px; font-size: 12px; background:#1f2937; }
+      .list { display: flex; flex-direction: column; gap: 8px; }
+      .item { display: flex; justify-content: space-between; align-items: center; padding: 8px; border: 1px solid #1f2937; border-radius: 8px; }
+      .left { display: flex; gap: 8px; align-items: center; }
+      .strike { text-decoration: line-through; opacity: 0.6; }
+      .badge { border-radius: 6px; padding: 2px 6px; font-size: 12px; border: 1px solid #374151; }
+      .red { background: #7f1d1d; }
+      .yellow { background: #78350f; }
+      .green { background: #064e3b; }
+      canvas { width: 100%; height: 200px; background: #0b1220; border: 1px solid #1f2937; border-radius: 8px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="row">
+        <strong>AVOPP</strong>
+        <span class="chip" id="subject-count">Materias: 0</span>
+      </div>
+      <div class="row">
+        <select id="filter-subject"></select>
+        <button id="clear-filter">Limpiar</button>
+      </div>
+    </header>
+    <main>
+      <section>
+        <h2>Editor de tareas</h2>
+        <div class="row" style="flex-wrap: wrap; gap: 8px;">
+          <select id="subject"></select>
+          <select id="type">
+            <option value="tarea">Tarea</option>
+            <option value="entrega">Entrega</option>
+            <option value="examen">Examen</option>
+            <option value="lectura">Lectura</option>
+          </select>
+          <input id="name" placeholder="Nombre" />
+          <input id="dueAt" type="datetime-local" />
+          <input id="startAt" type="datetime-local" />
+          <input id="description" placeholder="Descripción" />
+          <button id="save">Guardar</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Panel del día</h2>
+        <div class="list" id="day-classes"></div>
+        <hr />
+        <div class="list" id="day-activities"></div>
+      </section>
+
+      <section>
+        <h2>Lista priorizada</h2>
+        <div class="list" id="ranking"></div>
+      </section>
+
+      <section>
+        <h2>Resumen semanal</h2>
+        <canvas id="chart"></canvas>
+      </section>
+    </main>
+
+    <template id="activity-item">
+      <div class="item">
+        <div class="left">
+          <input type="checkbox" class="toggle" />
+          <span class="icon" style="width:18px"></span>
+          <span class="title"></span>
+          <span class="badge type"></span>
+          <span class="badge color"></span>
+        </div>
+        <div class="row">
+          <button class="edit">Editar</button>
+          <button class="priority">Prioridad</button>
+        </div>
+      </div>
+    </template>
+
+    <script>
+      const sel = q => document.querySelector(q);
+      const api = (p, opt={}) => fetch(p, opt).then(r => r.json());
+
+      async function loadSubjects() {
+        const s = await api('/api/subjects');
+        sel('#subject-count').textContent = `Materias: ${s.length}`;
+        const selects = [sel('#subject'), sel('#filter-subject')];
+        for (const el of selects) {
+          el.innerHTML = '<option value="">Materia...</option>' + s.map(x => `<option value="${x.id}">${x.name}</option>`).join('');
+        }
+      }
+
+      async function saveActivity() {
+        const body = {
+          subjectId: sel('#subject').value,
+          type: sel('#type').value,
+          name: sel('#name').value,
+          description: sel('#description').value || null,
+          startAt: sel('#startAt').value ? new Date(sel('#startAt').value).toISOString() : null,
+          dueAt: sel('#dueAt').value ? new Date(sel('#dueAt').value).toISOString() : null,
+        };
+        const created = await api('/api/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        await refreshAll();
+      }
+
+      async function toggleCompleted(id) {
+        await api(`/api/activities/${id}/toggle-completed`, { method: 'POST' });
+        await refreshAll();
+      }
+
+      async function editActivity(id) {
+        const name = prompt('Nuevo nombre (dejar vacío para no cambiar)');
+        const dueAt = prompt('Nueva fecha/hora ISO (YYYY-MM-DDTHH:mm:ssZ)');
+        const description = prompt('Nueva descripción (vacío para no cambiar)');
+        const body = {};
+        if (name) body.name = name;
+        if (dueAt) body.dueAt = dueAt;
+        if (description) body.description = description;
+        if (Object.keys(body).length === 0) return;
+        await api(`/api/activities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        await refreshAll();
+      }
+
+      async function setManualPriority(id) {
+        const v = prompt('Puntaje manual (0-300). Dejar vacío para modo auto.');
+        if (v === null) return;
+        const body = {};
+        if (v === '') {
+          body.priority = 'auto';
+          body.manualPriority = null;
+        } else {
+          const n = Number(v);
+          if (Number.isNaN(n)) return alert('Valor inválido');
+          body.priority = 'manual';
+          body.manualPriority = n;
+        }
+        await api(`/api/activities/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        await refreshAll();
+      }
+
+      function renderList(container, items) {
+        container.innerHTML = '';
+        for (const it of items) {
+          const tmpl = sel('#activity-item').content.cloneNode(true);
+          const root = tmpl.querySelector('.item');
+          const title = tmpl.querySelector('.title');
+          const cb = tmpl.querySelector('.toggle');
+          const btn = tmpl.querySelector('.edit');
+          const pbtn = tmpl.querySelector('.priority');
+          const type = tmpl.querySelector('.type');
+          const color = tmpl.querySelector('.color');
+          const icon = tmpl.querySelector('.icon');
+          title.textContent = it.name;
+          if (it.status === 'completed') title.classList.add('strike');
+          cb.checked = it.status === 'completed';
+          cb.addEventListener('change', () => toggleCompleted(it.id));
+          btn.addEventListener('click', () => editActivity(it.id));
+          pbtn.addEventListener('click', () => setManualPriority(it.id));
+          type.textContent = it.type;
+          color.textContent = it.color || '';
+          if (it.color) color.classList.add(it.color);
+          const icons = { clase: '🎓', tarea: '📝', examen: '🧪', lectura: '📖', entrega: '📦' };
+          icon.textContent = icons[it.type] || '•';
+          container.appendChild(tmpl);
+        }
+      }
+
+      async function refreshRanking() {
+        const subjectId = sel('#filter-subject').value || undefined;
+        const items = await api('/api/activities/ranking' + (subjectId ? `?subjectId=${subjectId}` : ''));
+        renderList(sel('#ranking'), items);
+      }
+
+      async function refreshDay() {
+        const d = await api('/api/day');
+        renderList(sel('#day-classes'), d.classes.map(x => ({...x, color: 'none'})));
+        renderList(sel('#day-activities'), d.activities);
+      }
+
+      async function refreshWeekly() {
+        const w = await api('/api/weekly-summary');
+        const ctx = sel('#chart').getContext('2d');
+        ctx.clearRect(0,0, ctx.canvas.width, ctx.canvas.height);
+        const days = w.days;
+        // Simple bars: entregas (blue) and examenes (red)
+        const width = ctx.canvas.width;
+        const height = ctx.canvas.height;
+        const barW = Math.floor(width / (days.length * 2));
+        const maxV = Math.max(1, ...days.map(d => Math.max(d.entregas, d.examenes)));
+        days.forEach((d, i) => {
+          const x = i * (barW * 2) + 20;
+          const h1 = (d.entregas / maxV) * (height - 40);
+          const h2 = (d.examenes / maxV) * (height - 40);
+          ctx.fillStyle = '#2563eb';
+          ctx.fillRect(x, height - h1 - 20, barW - 6, h1);
+          ctx.fillStyle = '#dc2626';
+          ctx.fillRect(x + barW, height - h2 - 20, barW - 6, h2);
+        });
+      }
+
+      async function refreshAll() {
+        await Promise.all([refreshRanking(), refreshDay(), refreshWeekly(), loadSubjects()]);
+      }
+
+      sel('#save').addEventListener('click', saveActivity);
+      sel('#clear-filter').addEventListener('click', () => { sel('#filter-subject').value = ''; refreshRanking(); });
+      sel('#filter-subject').addEventListener('change', refreshRanking);
+
+      (async () => {
+        await loadSubjects();
+        await refreshAll();
+      })();
+    </script>
+  </body>
+  </html>
+
+
