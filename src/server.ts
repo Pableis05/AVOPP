@@ -149,19 +149,29 @@ app.get('/api/activities/:id', async (req, res) => {
 
 app.patch('/api/activities/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, description, startAt, dueAt, status, priority, manualPriority } = req.body ?? {};
+  const { name, description, startAt, dueAt, status, priority, manualPriority, completedAt, completedBy } = req.body ?? {};
   try {
+    const updateData: any = {
+      name,
+      description,
+      startAt: startAt === undefined ? undefined : startAt ? new Date(startAt) : null,
+      dueAt: dueAt === undefined ? undefined : dueAt ? new Date(dueAt) : null,
+      status,
+      priority,
+      manualPriority,
+    };
+
+    // Handle completion audit fields
+    if (completedAt !== undefined) {
+      updateData.completedAt = completedAt ? new Date(completedAt) : null;
+    }
+    if (completedBy !== undefined) {
+      updateData.completedBy = completedBy;
+    }
+
     const item = await prisma.activity.update({
       where: { id },
-      data: {
-        name,
-        description,
-        startAt: startAt === undefined ? undefined : startAt ? new Date(startAt) : null,
-        dueAt: dueAt === undefined ? undefined : dueAt ? new Date(dueAt) : null,
-        status,
-        priority,
-        manualPriority,
-      },
+      data: updateData,
     });
     res.json(item);
   } catch (e: any) {
@@ -173,8 +183,21 @@ app.post('/api/activities/:id/toggle-completed', async (req, res) => {
   const { id } = req.params;
   const current = await prisma.activity.findUnique({ where: { id } });
   if (!current) return res.status(404).json({ error: 'not found' });
+  
   const nextStatus: ActivityStatus = current.status === 'completed' ? 'pending' : 'completed';
-  const updated = await prisma.activity.update({ where: { id }, data: { status: nextStatus } });
+  const updateData: any = { status: nextStatus };
+  
+  // Set completion audit fields
+  if (nextStatus === 'completed') {
+    updateData.completedAt = new Date();
+    updateData.completedBy = 'student'; // For now, hardcoded. Could be from auth context
+  } else {
+    // Clear completion fields when unmarking as completed
+    updateData.completedAt = null;
+    updateData.completedBy = null;
+  }
+  
+  const updated = await prisma.activity.update({ where: { id }, data: updateData });
   res.json(updated);
 });
 
